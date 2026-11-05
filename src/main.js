@@ -2,6 +2,7 @@ import "chessground/assets/chessground.base.css";
 import "chessground/assets/chessground.brown.css";
 import "chessground/assets/chessground.cburnett.css";
 import "./style.css";
+import "./review.css";
 import { renderHome } from "./views/home.js";
 import { renderReview } from "./views/review.js";
 import { fromChesscomTcn, lichessGame, store } from "./lib/sources.js";

@@ -1,10 +1,10 @@
 import { Chess } from "chess.js";
-import { chesscomRecent, lichessRecent, fromPgn, offlineGames, store } from "../lib/sources.js";
+import { myGames, forgetMyGames, fromPgn, offlineGames, store } from "../lib/sources.js";
 import { esc } from "../util.js";
 
 const SPEED = {
   bullet: ["⚡", "Bullet"], ultraBullet: ["⚡", "UltraBullet"], blitz: ["🔥", "Blitz"], rapid: ["⏱", "Rápida"],
-  classical: ["🐢", "Clássica"], daily: ["☀", "Diária"], correspondence: ["☀", "Correspondência"], offline: ["🤖", "Offline"],
+  classical: ["🐢", "Clássica"], daily: ["☀", "Diária"], correspondence: ["☀", "Correspondência"], offline: ["🤖", "Offline"], room: ["👥", "Sala"],
 };
 const SRC = { chesscom: "chess.com", lichess: "Lichess", offline: "Offline", pgn: "PGN" };
 const PIECE = { p: "pawn", n: "knight", b: "bishop", r: "rook", q: "queen", k: "king" };
@@ -32,7 +32,7 @@ function finalFen(g) {
   try { const c = new Chess(); c.loadPgn(g.pgn); return c.fen(); } catch { return null; }
 }
 
-export function renderHome(root) {
+export function renderHome(root, query = "") {
   const users = store.get("users") || { chesscom: "", lichess: "" };
   let filter = store.get("filter") || { src: "all", res: "all" };
   const editing = !users.chesscom && !users.lichess;
@@ -95,6 +95,7 @@ export function renderHome(root) {
 
   const $ = (s) => root.querySelector(s);
   $("#fres").value = filter.res;
+  if (query) { $("#q").value = query; filter.src = "all"; }
   const me = () => [users.chesscom, users.lichess, "você"].filter(Boolean).map((u) => u.toLowerCase());
 
   function outcome(g) {
@@ -163,13 +164,11 @@ export function renderHome(root) {
   async function load(force = false) {
     const sameUsers = cache.users && cache.users.chesscom === users.chesscom && cache.users.lichess === users.lichess;
     if (sameUsers && !force) return draw();
-    const jobs = [];
-    if (users.chesscom) jobs.push(chesscomRecent(users.chesscom, 60));
-    if (users.lichess) jobs.push(lichessRecent(users.lichess, 60));
+    if (force) forgetMyGames();
     cache = { users: { ...users }, games: [] };
-    $("#msg").innerHTML = jobs.length ? `<p class="muted">Carregando partidas…</p>` : "";
+    $("#msg").innerHTML = users.chesscom || users.lichess ? `<p class="muted">Carregando partidas…</p>` : "";
     draw();
-    const out = await Promise.allSettled(jobs);
+    const out = await myGames(users);
     cache.games = out.filter((r) => r.status === "fulfilled").flatMap((r) => r.value);
     $("#msg").innerHTML = out.filter((r) => r.status === "rejected").map((r) => `<p class="err">${esc(r.reason.message)}</p>`).join("");
     draw();

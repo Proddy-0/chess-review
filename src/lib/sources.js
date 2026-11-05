@@ -25,6 +25,20 @@ function tcLabel(tc) {
 
 const chesscomOpening = (ecoUrl) => (ecoUrl ? decodeURIComponent(ecoUrl.split("/openings/")[1] || "").replace(/-/g, " ").replace(/\s*\.\.\..*$|\s+(with\s+)?\d.*$/i, "").trim() : "");
 
+// Memoised "my games" so home and friends share one fetch per session.
+const mine = new Map();
+export function myGames(users) {
+  const key = `${users.chesscom || ""}|${users.lichess || ""}`;
+  if (!mine.has(key)) {
+    const jobs = [];
+    if (users.chesscom) jobs.push(chesscomRecent(users.chesscom, 60));
+    if (users.lichess) jobs.push(lichessRecent(users.lichess, 60));
+    mine.set(key, Promise.allSettled(jobs));
+  }
+  return mine.get(key);
+}
+export function forgetMyGames() { mine.clear(); }
+
 export async function chesscomRecent(user, max = 40) {
   const u = user.trim().toLowerCase();
   const r = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(u)}/games/archives`);

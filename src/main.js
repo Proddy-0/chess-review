@@ -4,19 +4,30 @@ import "chessground/assets/chessground.cburnett.css";
 import "./style.css";
 import "./review.css";
 import "./home.css";
+import "./social.css";
 import { renderHome } from "./views/home.js";
 import { renderReview } from "./views/review.js";
 import { renderPlay } from "./views/play.js";
+import { renderFriends } from "./views/friends.js";
+import { renderRoom } from "./views/room.js";
 import { fromChesscomTcn, lichessGame, store } from "./lib/sources.js";
 import { esc } from "./util.js";
 
 const app = document.getElementById("app");
 let cleanup = null;
 
+function navActive(path) {
+  document.querySelectorAll(".nav a").forEach((a) => {
+    const t = a.getAttribute("href").slice(1);
+    a.classList.toggle("on", t === "/" ? path === "/" : path.startsWith(t));
+  });
+}
+
 async function route() {
   cleanup?.();
   cleanup = null;
   const [path, qs = ""] = (location.hash.slice(1) || "/").split("?");
+  navActive(path);
 
   try {
     if (path === "/import") {
@@ -48,7 +59,15 @@ async function route() {
       cleanup = renderPlay(app);
       return;
     }
-    cleanup = renderHome(app);
+    if (path === "/friends") {
+      cleanup = renderFriends(app);
+      return;
+    }
+    if (path === "/room" || path.startsWith("/room/")) {
+      cleanup = renderRoom(app, path.slice("/room/".length) || null, qs);
+      return;
+    }
+    cleanup = renderHome(app, new URLSearchParams(qs).get("q") || "");
   } catch (e) {
     app.innerHTML = `<p class="err">${esc(e.message)}</p><p><a href="#/">Voltar</a></p>`;
   }

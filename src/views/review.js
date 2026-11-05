@@ -399,6 +399,7 @@ export function renderReview(root, game, me = []) {
       cached.forEach((r, i) => (res[i] = r));
       for (let i = 0; i < n; i++) updateMove(i);
       done = true;
+      store.set(`acc:${game.key}`, { w: +accuracyOf("w").toFixed(1), b: +accuracyOf("b").toFixed(1) });
       setProgress(n + 1);
       moveList(); goto(cur);
       return;
@@ -431,6 +432,7 @@ export function renderReview(root, game, me = []) {
     engine = null;
     done = true;
     store.set(`an2:${game.key}:${depth}`, res);
+    store.set(`acc:${game.key}`, { w: +accuracyOf("w").toFixed(1), b: +accuracyOf("b").toFixed(1) });
     setProgress(n + 1);
     players();
     if (cur === 0) coach();

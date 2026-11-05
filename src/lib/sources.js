@@ -1,9 +1,29 @@
 import { Chess } from "chess.js";
 import { decodeTCN } from "./tcn.js";
 
-// Game = { key, src, id, url, pgn, white, black, whiteElo, blackElo, result, end, speed }
+// Game = { key, src, id, url, pgn, white, black, whiteElo, blackElo, result, end, speed,
+//          tc, fen, moves, opening, ending, acc: { w, b } | null, orient? }
 
 const RESULT = (pgn) => (pgn.match(/\[Result "([^"]+)"\]/) || [])[1] || "*";
+const HEADER = (pgn, k) => (pgn.match(new RegExp(`\\[${k} "([^"]*)"\\]`)) || [])[1];
+const fullMoves = (pgn) => Math.max(0, ...[...pgn.replace(/\[[^\]]*\]/g, "").replace(/\{[^}]*\}/g, "").matchAll(/(\d+)\.(?!\.)/g)].map((m) => +m[1]));
+
+const ENDINGS = [
+  [/checkmate|mate/i, "xeque-mate"], [/resign/i, "abandono"], [/abandon/i, "abandono da partida"],
+  [/insufficient/i, "material insuficiente"], [/time|outoftime/i, "tempo"], [/stalemate/i, "afogamento"],
+  [/repetition/i, "repetição"], [/agree|draw/i, "acordo"], [/50/i, "regra dos 50 lances"],
+];
+const ending = (text) => (ENDINGS.find(([re]) => re.test(text || "")) || [null, ""])[1];
+
+function tcLabel(tc) {
+  if (!tc) return "";
+  if (tc.includes("/")) return `${Math.round(+tc.split("/")[1] / 86400)} dia(s)`;
+  const [base, inc] = tc.split("+").map(Number);
+  const m = base >= 60 ? `${base / 60}` : `${base}s`;
+  return inc ? `${m}+${inc}` : `${m} min`;
+}
+
+const chesscomOpening = (ecoUrl) => (ecoUrl ? decodeURIComponent(ecoUrl.split("/openings/")[1] || "").replace(/-/g, " ").replace(/\s*\.\.\..*$|\s+(with\s+)?\d.*$/i, "").trim() : "");
 
 export async function chesscomRecent(user, max = 40) {
   const u = user.trim().toLowerCase();
@@ -28,6 +48,12 @@ export async function chesscomRecent(user, max = 40) {
         result: RESULT(g.pgn),
         end: g.end_time * 1000,
         speed: g.time_class,
+        tc: tcLabel(g.time_control),
+        fen: g.fen,
+        moves: fullMoves(g.pgn),
+        opening: chesscomOpening(g.eco || HEADER(g.pgn, "ECOUrl")),
+        ending: ending(HEADER(g.pgn, "Termination")),
+        acc: g.accuracies ? { w: g.accuracies.white, b: g.accuracies.black } : null,
       });
     }
     if (out.length >= max) break;
@@ -37,7 +63,7 @@ export async function chesscomRecent(user, max = 40) {
 
 export async function lichessRecent(user, max = 40) {
   const r = await fetch(
-    `https://lichess.org/api/games/user/${encodeURIComponent(user.trim())}?max=${max}&pgnInJson=true&clocks=false&evals=false&opening=true`,
+    `https://lichess.org/api/games/user/${encodeURIComponent(user.trim())}?max=${max}&pgnInJson=true&clocks=false&evals=false&opening=true&accuracy=true&lastFen=true`,
     { headers: { Accept: "application/x-ndjson" } },
   );
   if (!r.ok) throw new Error(`Usuário "${user}" não encontrado no Lichess`);
@@ -57,6 +83,12 @@ export async function lichessRecent(user, max = 40) {
       result: RESULT(g.pgn),
       end: g.lastMoveAt || g.createdAt,
       speed: g.speed,
+      tc: g.clock ? tcLabel(`${g.clock.initial}+${g.clock.increment}`) : g.daysPerTurn ? `${g.daysPerTurn} dia(s)` : "",
+      fen: g.lastFen,
+      moves: Math.ceil((g.moves || "").split(" ").filter(Boolean).length / 2),
+      opening: g.opening?.name || "",
+      ending: ending(g.status),
+      acc: g.players.white.analysis?.accuracy != null ? { w: g.players.white.analysis.accuracy, b: g.players.black.analysis?.accuracy } : null,
     }));
 }
 
@@ -88,6 +120,17 @@ export function fromPgn(pgn) {
   for (const ch of pgn) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
   return { key: `pgn-${(hash >>> 0).toString(36)}`, src: "pgn", id: null, pgn,
     white: h.White || "Brancas", black: h.Black || "Pretas", whiteElo: h.WhiteElo, blackElo: h.BlackElo, result: h.Result || "*" };
+}
+
+// Offline games played on this site against Stockfish.
+export function offlineGames() {
+  return store.get("offline") || [];
+}
+export function saveOffline(game) {
+  const list = offlineGames().filter((g) => g.key !== game.key);
+  list.unshift(game);
+  store.set("offline", list.slice(0, 200));
+  store.set(`game:${game.key}`, game);
 }
 
 // Persistence (best effort; private windows may block storage).

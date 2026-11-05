@@ -3,8 +3,10 @@ import "chessground/assets/chessground.brown.css";
 import "chessground/assets/chessground.cburnett.css";
 import "./style.css";
 import "./review.css";
+import "./home.css";
 import { renderHome } from "./views/home.js";
 import { renderReview } from "./views/review.js";
+import { renderPlay } from "./views/play.js";
 import { fromChesscomTcn, lichessGame, store } from "./lib/sources.js";
 import { esc } from "./util.js";
 
@@ -40,6 +42,10 @@ async function route() {
       const users = store.get("users") || {};
       const me = [users.chesscom, users.lichess].filter(Boolean).map((u) => u.toLowerCase());
       cleanup = renderReview(app, g, me);
+      return;
+    }
+    if (path === "/play") {
+      cleanup = renderPlay(app);
       return;
     }
     cleanup = renderHome(app);

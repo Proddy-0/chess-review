@@ -1,13 +1,13 @@
 import { Chess } from "chess.js";
 import { Chessground } from "chessground";
 import { Engine } from "../lib/engine.js";
-import { toWhitePov, whiteWinPct, formatEval, classify, KINDS, KIND_ORDER } from "../lib/analysis.js";
+import { whiteWinPct, formatEval, KINDS, KIND_ORDER } from "../lib/analysis.js";
+import { DEPTHS, openings, posKey, evalPosition, classifyMove, cachedAnalysis } from "../lib/pipeline.js";
 import { explain, playLine } from "../lib/explain.js";
 import { sound } from "../lib/sound.js";
 import { store } from "../lib/sources.js";
 import { esc } from "../util.js";
 
-const DEPTHS = [12, 16, 20];
 const THEMES = { verde: "Verde", marrom: "Madeira", azul: "Azul" };
 const GLYPH = { w: { p: "♙", n: "♘", b: "♗", r: "♖", q: "♕" }, b: { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛" } };
 const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9 };
@@ -17,11 +17,8 @@ const KEY_KINDS = ["brilliant", "great", "miss", "mistake", "blunder"];
 export const badge = (kind, cls = "") =>
   kind ? `<span class="ico ${cls}" style="--c:${KINDS[kind].color}" title="${KINDS[kind].name}">${KINDS[kind].tag}</span>` : "";
 
-let openingsP = null;
-const openings = () => (openingsP ||= import("../data/openings.json").then((m) => m.default));
-const posKey = (fen) => fen.split(" ").slice(0, 2).join(" ");
 
-export function renderReview(root, game, me = []) {
+export function renderReview(root, game, me = [], { ply = 0 } = {}) {
   const chess = new Chess();
   chess.loadPgn(game.pgn);
   const moves = chess.history({ verbose: true });
@@ -32,12 +29,13 @@ export function renderReview(root, game, me = []) {
   let orientation = game.orient || (isMe(game.black) && !isMe(game.white) ? "black" : "white");
   let depth = store.get("depth") || 16;
   let theme = store.get("theme") || "verde";
-  let cur = 0;
+  let cur = Math.max(0, Math.min(ply, n));
   let timer = null;
   let preview = null; // { timer }
   let engine = null;
   let alive = true;
   let done = false;
+  let forceDepth = false; // user picked a depth explicitly: don't fall back to another cached depth
   const res = new Array(n + 1).fill(null); // { ev, best, pv, second }
   const cls = new Array(n).fill(null); // { kind, accuracy, drop }
   const book = new Array(n).fill(false);
@@ -373,10 +371,7 @@ export function renderReview(root, game, me = []) {
 
   function updateMove(i) {
     if (i < 0 || i >= n || !res[i] || !res[i + 1]) return;
-    cls[i] = classify({
-      before: res[i].ev, after: res[i + 1].ev, second: res[i].second, mover: moves[i].color,
-      played: moves[i].lan, best: res[i].best, fenBefore: fens[i], book: book[i], prevKind: cls[i - 1]?.kind,
-    });
+    cls[i] = classifyMove(moves, fens, res, book, i, cls[i - 1]?.kind);
   }
 
   function setProgress(i) {
@@ -394,7 +389,13 @@ export function renderReview(root, game, me = []) {
     res.fill(null); cls.fill(null);
     await markBook();
     if (!alive) return;
-    const cached = store.get(`an2:${game.key}:${depth}`);
+    // Exact depth first; otherwise reuse any depth already cached (e.g. batch analysis from Puzzles).
+    let cached = store.get(`an2:${game.key}:${depth}`);
+    if (!(cached && cached.length === n + 1) && !forceDepth) {
+      const any = cachedAnalysis(game.key, n);
+      if (any) { cached = any.res; depth = any.depth; $("depth").value = String(depth); }
+    }
+    forceDepth = false;
     if (cached && cached.length === n + 1) {
       cached.forEach((r, i) => (res[i] = r));
       for (let i = 0; i < n; i++) updateMove(i);
@@ -409,20 +410,9 @@ export function renderReview(root, game, me = []) {
     for (let i = 0; i <= n; i++) {
       if (!alive || engine !== mine) return;
       setProgress(i);
-      const c = new Chess(fens[i]);
-      if (c.isCheckmate()) res[i] = { ev: { cp: c.turn() === "w" ? -100000 : 100000, final: "mate" }, best: null, pv: [], second: null };
-      else if (c.isDraw() || c.isStalemate()) res[i] = { ev: { cp: 0, final: "draw" }, best: null, pv: [], second: null };
-      else {
-        const r = await mine.analyse(fens[i], depth);
-        if (engine !== mine || !alive) return;
-        const wtm = c.turn() === "w";
-        res[i] = {
-          ev: r.info ? toWhitePov(r.info, wtm) : { cp: 0 },
-          best: r.bestmove,
-          pv: r.info?.pv || [],
-          second: r.second ? toWhitePov(r.second, wtm) : null,
-        };
-      }
+      const r = await evalPosition(mine, fens[i], depth);
+      if (engine !== mine || !alive) return;
+      res[i] = r;
       updateMove(i - 1);
       if (i >= 1) updateCell(i - 1);
       if (i === cur || i === cur - 1) { decorate(); evalBar(res[cur]?.ev); coach(); }
@@ -486,8 +476,8 @@ export function renderReview(root, game, me = []) {
     tip.innerHTML = i === 0 ? "Início" : `${Math.ceil(i / 2)}${moves[i - 1].color === "w" ? "." : "..."} ${esc(moves[i - 1].san)} ${badge(cls[i - 1]?.kind, "sm")} <b>${formatEval(res[i]?.ev)}</b>`;
   });
   $("graph").addEventListener("mouseleave", () => { $("gtip").style.display = "none"; });
-  $("depth").addEventListener("change", (e) => { depth = +e.target.value; store.set("depth", depth); analyse(); });
-  $("reanalyse").addEventListener("click", () => { try { localStorage.removeItem(`cr:an2:${game.key}:${depth}`); } catch { /* ignore */ } analyse(); });
+  $("depth").addEventListener("change", (e) => { depth = +e.target.value; store.set("depth", depth); forceDepth = true; analyse(); });
+  $("reanalyse").addEventListener("click", () => { forceDepth = true; try { localStorage.removeItem(`cr:an2:${game.key}:${depth}`); } catch { /* ignore */ } analyse(); });
 
   const onKey = (e) => {
     if (e.target.closest("input, textarea, select")) return;
@@ -498,7 +488,7 @@ export function renderReview(root, game, me = []) {
   window.addEventListener("keydown", onKey);
 
   moveList();
-  goto(0);
+  goto(cur);
   analyse();
 
   return () => { alive = false; stop(); stopPreview(); engine?.terminate(); cg.destroy(); window.removeEventListener("keydown", onKey); document.removeEventListener("click", onDocClick); };

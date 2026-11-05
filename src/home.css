@@ -104,3 +104,18 @@ button.danger:hover { border-color: #ca3431; color: #ff8a80; }
 .em-title { font-size: 24px; font-weight: 900; }
 .em-title.win { color: #9ccc65; } .em-title.loss { color: #ff8a80; }
 .em-row { display: flex; gap: 8px; } .em-row button { flex: 1; }
+
+/* ================= puzzles ================= */
+.puzzles .board-wrap { width: min(640px, calc(100vw - 40px), calc(100vh - 170px)); }
+.pz-tabs { align-self: flex-start; }
+.puzzles .controls button:disabled { opacity: .45; cursor: default; }
+.puzzles .coach a { color: var(--accent); font-weight: 700; }
+.puzzles .coach .ico { width: 18px; height: 18px; font-size: 10px; vertical-align: middle; }
+.pz-stats { display: flex; gap: 6px; }
+.pz-stats span { flex: 1; background: #1f1e1b; border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; align-items: center; }
+.pz-stats b { font-size: 18px; } .pz-stats small { color: var(--muted); font-size: 11px; }
+.pz-stats .f b { color: #ff8a80; } .pz-stats .l b { color: #f0c15c; } .pz-stats .m b { color: #9ccc65; }
+.pz-batch { background: #2f2e2a; border: 1px dashed #5c8bb0; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.pz-batch .pbar { flex: none; }
+.pz-batch small { display: block; }
+.ok-msg { color: #9ccc65; font-weight: 700; }

@@ -10,6 +10,7 @@ import { renderReview } from "./views/review.js";
 import { renderPlay } from "./views/play.js";
 import { renderFriends } from "./views/friends.js";
 import { renderRoom } from "./views/room.js";
+import { renderPuzzles } from "./views/puzzles.js";
 import { fromChesscomTcn, lichessGame, store } from "./lib/sources.js";
 import { esc } from "./util.js";
 
@@ -52,11 +53,15 @@ async function route() {
       }
       const users = store.get("users") || {};
       const me = [users.chesscom, users.lichess].filter(Boolean).map((u) => u.toLowerCase());
-      cleanup = renderReview(app, g, me);
+      cleanup = renderReview(app, g, me, { ply: +new URLSearchParams(qs).get("ply") || 0 });
       return;
     }
     if (path === "/play") {
       cleanup = renderPlay(app);
+      return;
+    }
+    if (path === "/puzzles") {
+      cleanup = renderPuzzles(app);
       return;
     }
     if (path === "/friends") {

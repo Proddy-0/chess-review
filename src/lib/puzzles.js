@@ -136,3 +136,46 @@ export function queue(list, filter = "train") {
   else if (filter === "failed") l = l.filter((z) => status(p[z.id]) === "failed");
   return [...l].sort((a, b) => rank(a) - rank(b) || b.end - a.end || sev[a.kind] - sev[b.kind] || a.ply - b.ply);
 }
+
+// ---------- Lichess puzzle database (anonymous API, CORS *) ----------
+const THEMES = [
+  ["mateIn1", "Mate em 1"], ["mateIn2", "Mate em 2"], ["mateIn3", "Mate em 3"], ["mateIn4", "Mate em 4"], ["mateIn5", "Mate longo"],
+  ["backRankMate", "Mate no corredor"], ["smotheredMate", "Mate sufocado"], ["fork", "Garfo"], ["pin", "Cravada"],
+  ["skewer", "Espeto"], ["discoveredAttack", "Ataque descoberto"], ["doubleCheck", "Xeque duplo"], ["hangingPiece", "Peça pendurada"],
+  ["trappedPiece", "Peça presa"], ["deflection", "Desvio"], ["attraction", "Atração"], ["sacrifice", "Sacrifício"],
+  ["promotion", "Promoção"], ["advancedPawn", "Peão avançado"], ["defensiveMove", "Lance de defesa"], ["crushing", "Ganhe material"],
+  ["advantage", "Ganhe vantagem"], ["equality", "Salve a partida"],
+];
+export const DIFFS = [["easiest", "Fácil"], ["easier", "Médio"], ["normal", "Difícil"]];
+
+export async function lichessPuzzle(difficulty = "easiest") {
+  const r = await fetch(`https://lichess.org/api/puzzle/next?difficulty=${difficulty}`, { headers: { Accept: "application/json" } });
+  if (r.status === 429) throw new Error("Lichess pediu pra esperar um pouco (limite de pedidos). Tente em 1 minuto.");
+  if (!r.ok) throw new Error(`Lichess respondeu ${r.status}`);
+  const { game, puzzle } = await r.json();
+  // fen = position to solve (lastMove already played). Rebuild the position before lastMove from the game.
+  const c = new Chess();
+  const sans = game.pgn.split(/\s+/).filter(Boolean);
+  sans.slice(0, -1).forEach((s) => c.move(s));
+  const prevFen = c.fen();
+  const last = c.move(sans[sans.length - 1]);
+  const fen = puzzle.fen || c.fen();
+  const color = fen.split(" ")[1];
+  const oppP = game.players.find((p) => p.color !== (color === "w" ? "white" : "black"));
+  const t = THEMES.find(([k]) => puzzle.themes.includes(k));
+  return {
+    id: `li:${puzzle.id}`, ext: { id: puzzle.id, rating: puzzle.rating, themes: puzzle.themes },
+    fen, color, line: puzzle.solution, theme: t ? t[1] : "Ache o melhor lance",
+    prev: { fen: prevFen, from: last.from, to: last.to, promotion: last.promotion },
+    opp: oppP ? `${oppP.name} (${oppP.rating})` : "Lichess", moveNo: Math.floor(puzzle.initialPly / 2) + 1,
+  };
+}
+
+// Stats for Lichess puzzles: { solved, failed, streak, best }
+export const liStats = () => store.get("pzli") || { solved: 0, failed: 0, streak: 0, best: 0 };
+export function liRecord(ok) {
+  const s = liStats();
+  if (ok) { s.solved++; s.streak++; s.best = Math.max(s.best, s.streak); } else { s.failed++; s.streak = 0; }
+  store.set("pzli", s);
+  return s;
+}

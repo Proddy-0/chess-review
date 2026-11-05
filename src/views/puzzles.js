@@ -4,12 +4,12 @@ import { KINDS } from "../lib/analysis.js";
 import { sound } from "../lib/sound.js";
 import { myGames, offlineGames, store } from "../lib/sources.js";
 import { analyseGame, cachedAnalysis } from "../lib/pipeline.js";
-import { allPuzzles, queue, progress, record, status, myColor, meList } from "../lib/puzzles.js";
+import { allPuzzles, queue, progress, record, status, myColor, meList, lichessPuzzle, liStats, liRecord, DIFFS } from "../lib/puzzles.js";
 import { esc } from "../util.js";
 
 const SRC = { chesscom: "chess.com", lichess: "Lichess", offline: "Offline", pgn: "PGN" };
-const FILTERS = [["train", "Treino"], ["failed", "Errados"], ["all", "Todos"]];
-const BATCH = 5;
+const FILTERS = [["train", "Meus erros"], ["failed", "Errados"], ["all", "Todos"], ["lichess", "🌐 Lichess"]];
+const BATCH_SIZES = [5, 20, 50];
 const BATCH_DEPTH = 12;
 
 export function renderPuzzles(root) {
@@ -24,6 +24,9 @@ export function renderPuzzles(root) {
   let failed = false, hinted = false, finished = false;
   let timers = [];
   let batching = false;
+  let diff = store.get("pzDiff") || "easiest";
+  let nextLi = null; // prefetched Lichess puzzle promise
+  const isLi = () => filter === "lichess";
   const later = (fn, ms) => timers.push(setTimeout(() => alive && fn(), ms));
 
   root.innerHTML = `
@@ -38,7 +41,7 @@ export function renderPuzzles(root) {
         <div class="player" id="pBot"></div>
       </div>
       <aside class="panel">
-        <div class="panel-head"><span class="ph-title">🧩 Puzzles dos seus erros</span><span class="muted small" id="pos"></span></div>
+        <div class="panel-head"><span class="ph-title">🧩 Puzzles</span><span class="muted small" id="pos"></span></div>
         <div class="tabs pz-tabs" id="tabs"></div>
         <div class="stage"><div id="status"></div></div>
         <div class="controls play-ctl">
@@ -95,12 +98,18 @@ export function renderPuzzles(root) {
     const left = Math.ceil((z.line.length - step) / 2);
     coach("#5c8bb0", "🧩", `${esc(z.theme)} · você de ${colorName(z.color)}`,
       step === 0
-        ? `Lance ${z.moveNo} contra <b>${esc(z.opp)}</b>. Aqui você errou na partida. Ache o melhor lance.`
+        ? z.ext ? `Puzzle do Lichess (rating ${z.ext.rating}). Ache o melhor lance.`
+          : `Lance ${z.moveNo} contra <b>${esc(z.opp)}</b>. Aqui você errou na partida. Ache o melhor lance.`
         : `Boa! Continue: ${left} lance${left > 1 ? "s" : ""} pra fechar.`);
   }
 
   function players() {
     const mine = z.color === "w" ? "Você (brancas)" : "Você (pretas)";
+    if (z.ext) {
+      $("pTop").innerHTML = `<span class="dot ${z.color === "w" ? "b" : "w"}"></span><b>Lichess</b>`;
+      $("pBot").innerHTML = `<span class="dot ${z.color}"></span><b>${mine}</b>`;
+      return;
+    }
     const top = `<span class="dot ${z.color === "w" ? "b" : "w"}"></span><b>${esc(z.opp)}</b>`;
     $("pTop").innerHTML = top;
     $("pBot").innerHTML = `<span class="dot ${z.color}"></span><b>${mine}</b>`;
@@ -112,7 +121,7 @@ export function renderPuzzles(root) {
     z = puzzle;
     if (!z) return empty();
     step = 0; failed = false; hinted = false; finished = false;
-    $("pos").textContent = `${idx + 1}/${q.length}`;
+    $("pos").textContent = z.ext ? `#${z.ext.id}` : `${idx + 1}/${q.length}`;
     cg.setAutoShapes([]);
     cg.set({ orientation: z.color === "w" ? "white" : "black" });
     players();
@@ -174,8 +183,9 @@ export function renderPuzzles(root) {
   function solved(gaveUp = false) {
     finished = true;
     const clean = !failed && !hinted && !gaveUp;
-    const e = record(z.id, clean);
     sync();
+    if (z.ext) return solvedLi(clean, gaveUp);
+    const e = record(z.id, clean);
     const k = KINDS[z.kind];
     const bestSan = (() => { const c = new Chess(z.fen); return uciMove(c, z.line[0]).san; })();
     const icon = clean ? "✓" : gaveUp ? "👁" : "✓";
@@ -187,6 +197,35 @@ export function renderPuzzles(root) {
     if (clean) sound.play({ flags: "", san: "" }, { kind: "great" });
     buttons();
     stats();
+  }
+
+  function solvedLi(clean, gaveUp) {
+    const s = liRecord(clean);
+    coach(clean ? "#81b64c" : "#f0c15c", clean ? "✓" : gaveUp ? "👁" : "✓",
+      clean ? `Resolvido! Sequência: ${s.streak}` : gaveUp ? "Solução" : "Resolvido com ajuda",
+      `${esc(z.theme)} · rating do puzzle <b>${z.ext.rating}</b>.
+       <br><a href="https://lichess.org/training/${encodeURIComponent(z.ext.id)}" target="_blank" rel="noopener">Abrir no Lichess ↗</a>`);
+    if (clean) sound.play({ flags: "", san: "" }, { kind: "great" });
+    buttons();
+    stats();
+  }
+
+  // ---------- Lichess mode ----------
+  const fetchLi = () => lichessPuzzle(diff).catch((e) => ({ error: e }));
+  async function showLi() {
+    timers.forEach(clearTimeout); timers = [];
+    z = null; buttons();
+    coach("#5c8bb0", "🌐", "Buscando puzzle…", "Puzzle do banco do Lichess no nível escolhido.");
+    const p = await (nextLi || fetchLi());
+    nextLi = null;
+    if (!alive || !isLi()) return;
+    if (p.error) {
+      coach("#ca3431", "!", "Não deu pra buscar", `${esc(p.error.message)} <br><button id="liRetry">Tentar de novo</button>`);
+      $("liRetry")?.addEventListener("click", showLi);
+      return;
+    }
+    show(p);
+    nextLi = fetchLi(); // prefetch
   }
 
   function giveUp() {
@@ -214,6 +253,7 @@ export function renderPuzzles(root) {
   }
 
   function next() {
+    if (isLi()) return showLi();
     if (!q.length) return;
     idx = (idx + 1) % q.length;
     if (idx === 0) { q = queue(list, filter); }
@@ -225,19 +265,30 @@ export function renderPuzzles(root) {
     $("pTop").innerHTML = ""; $("pBot").innerHTML = ""; $("pos").textContent = "";
     const none = !list.length;
     coach("#5c8bb0", "🧩", none ? "Nenhum puzzle ainda" : "Nada nessa lista",
-      none ? "Os puzzles saem dos seus erros em partidas já analisadas. Analise algumas partidas abaixo (ou abra uma revisão) pra gerar."
-        : filter === "failed" ? "Você não tem puzzle errado pendente. 👏" : "Tudo dominado por aqui. Analise mais partidas pra gerar novos.");
+      (none ? "Os puzzles saem dos seus erros em partidas já analisadas. Analise mais partidas abaixo pra gerar."
+        : filter === "failed" ? "Você não tem puzzle errado pendente. 👏" : "Tudo dominado por aqui. Analise mais partidas abaixo pra gerar novos.")
+      + ` <br>Ou treine com puzzles do Lichess no seu nível: <button id="goLi">🌐 Puzzles do Lichess</button>`);
+    $("goLi")?.addEventListener("click", () => setFilter("lichess"));
     buttons();
   }
 
   // ---------- lists / stats ----------
   function tabs() {
     const p = progress();
-    const cnt = { train: list.filter((x) => status(p[x.id]) !== "mastered").length, failed: list.filter((x) => status(p[x.id]) === "failed").length, all: list.length };
+    const cnt = { train: list.filter((x) => status(p[x.id]) !== "mastered").length, failed: list.filter((x) => status(p[x.id]) === "failed").length, all: list.length, lichess: liStats().solved };
     $("tabs").innerHTML = FILTERS.map(([k, v]) => `<button class="tab ${filter === k ? "on" : ""}" data-f="${k}">${v}<small>${cnt[k]}</small></button>`).join("");
   }
 
   function stats() {
+    if (isLi()) {
+      const s = liStats();
+      $("stats").innerHTML = `
+        <span class="m"><b>${s.solved}</b><small>resolvidos</small></span>
+        <span class="f"><b>${s.failed}</b><small>errados</small></span>
+        <span class="l"><b>${s.streak}</b><small>sequência</small></span>
+        <span><b>${s.best}</b><small>recorde</small></span>`;
+      return tabs();
+    }
     const p = progress();
     const c = { new: 0, failed: 0, learning: 0, mastered: 0 };
     list.forEach((x) => c[status(p[x.id])]++);
@@ -256,6 +307,7 @@ export function renderPuzzles(root) {
     stats();
     if (keepCurrent && z && !finished) { idx = Math.max(0, q.findIndex((x) => x.id === z.id)); $("pos").textContent = `${idx + 1}/${q.length}`; return; }
     idx = 0;
+    if (isLi()) return;
     show(q[0]);
   }
 
@@ -273,18 +325,33 @@ export function renderPuzzles(root) {
       .sort((a, b) => (b.end || 0) - (a.end || 0));
   }
 
+  function diffBox() {
+    $("batch").innerHTML = `<div>Nível dos puzzles do Lichess</div>
+      <div class="pz-diff">${DIFFS.map(([k, v]) => `<button class="${k === diff ? "on" : ""}" data-d="${k}">${v}</button>`).join("")}</div>
+      <small class="muted">Fácil ≈ puzzles de rating 600–1000. Suba quando acertar 5 seguidos.</small>`;
+    $("batch").querySelectorAll("[data-d]").forEach((b) => b.addEventListener("click", () => {
+      diff = b.dataset.d; store.set("pzDiff", diff); nextLi = null; diffBox(); showLi();
+    }));
+  }
+
   async function batchBox(msg = "") {
     if (batching) return;
+    if (isLi()) return diffBox();
     $("batch").innerHTML = `<span class="muted small">Procurando partidas sem análise…</span>`;
     const pend = await pendingGames();
     if (!alive || batching) return;
+    if (isLi()) return diffBox(); // tab changed while fetching
     $("batch").innerHTML = pend.length
       ? `<div><b>${pend.length}</b> partida${pend.length > 1 ? "s" : ""} sua${pend.length > 1 ? "s" : ""} ainda sem análise.
            <small class="muted">Cada partida analisada vira puzzles. ~30s por partida.</small></div>
-         <button id="batchGo">⚙ Analisar as próximas ${Math.min(BATCH, pend.length)}</button>${msg}`
+         <div class="pz-diff">${sizes(pend.length).map((n) =>
+           `<button data-n="${n}">⚙ Analisar ${n >= pend.length ? `todas (${pend.length})` : n}</button>`).join("")}</div>${msg}`
       : `<span class="muted small">Todas as suas partidas já foram analisadas.</span>${msg}`;
-    $("batchGo")?.addEventListener("click", () => runBatch(pend.slice(0, BATCH)));
+    $("batch").querySelectorAll("[data-n]").forEach((b) => b.addEventListener("click", () => runBatch(pend.slice(0, +b.dataset.n))));
   }
+
+  // 5 / 20 / 50 capped at the pending count, no duplicates
+  const sizes = (n) => [...new Set(BATCH_SIZES.map((x) => Math.min(x, n)))];
 
   async function runBatch(games) {
     batching = true;
@@ -292,6 +359,7 @@ export function renderPuzzles(root) {
     for (let gi = 0; gi < games.length && alive; gi++) {
       const g = games[gi];
       const draw = (i, total) => {
+        if (isLi()) return; // difficulty box stays visible in Lichess mode
         const pct = Math.round((i / total) * 100);
         $("batch").innerHTML = `<div class="small">Analisando ${gi + 1}/${games.length}: <b>${esc(g.white)}</b> × <b>${esc(g.black)}</b> <span class="muted">(${SRC[g.src] || g.src})</span></div>
           <div class="pbar"><i style="width:${pct}%"></i></div>`;
@@ -299,21 +367,26 @@ export function renderPuzzles(root) {
       try { await analyseGame(g, { depth: BATCH_DEPTH, onProgress: draw, alive: () => alive }); } catch (e) { console.warn("batch analyse", g.key, e); }
       if (!alive) return;
       await reload(true);
+      if (!z && !isLi()) show(q[0]); // first puzzles appear while the batch keeps running
     }
     batching = false;
     if (!alive) return;
     const gained = list.length - made;
     batchBox(`<div class="small ok-msg">+${gained} puzzle${gained === 1 ? "" : "s"} novo${gained === 1 ? "" : "s"}.</div>`);
-    if (!z) show(q[0]);
   }
 
   // ---------- events ----------
+  function setFilter(f) {
+    filter = f;
+    store.set("pzFilter", filter);
+    stats();
+    if (!batching) batchBox();
+    if (isLi()) return showLi();
+    q = queue(list, filter); idx = 0; show(q[0]);
+  }
   $("tabs").addEventListener("click", (e) => {
     const b = e.target.closest("[data-f]");
-    if (!b) return;
-    filter = b.dataset.f;
-    store.set("pzFilter", filter);
-    q = queue(list, filter); idx = 0; tabs(); show(q[0]);
+    if (b) setFilter(b.dataset.f);
   });
   $("hint").addEventListener("click", hint);
   $("sol").addEventListener("click", giveUp);
@@ -325,7 +398,7 @@ export function renderPuzzles(root) {
   window.addEventListener("keydown", onKey);
 
   coach("#5c8bb0", "🧩", "Carregando puzzles…", "Lendo suas partidas analisadas.");
-  reload(false).then(() => batchBox());
+  reload(false).then(() => { batchBox(); if (isLi()) showLi(); });
 
   return () => {
     alive = false;

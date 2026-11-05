@@ -119,3 +119,7 @@ button.danger:hover { border-color: #ca3431; color: #ff8a80; }
 .pz-batch .pbar { flex: none; }
 .pz-batch small { display: block; }
 .ok-msg { color: #9ccc65; font-weight: 700; }
+.pz-diff { display: flex; gap: 6px; flex-wrap: wrap; }
+.pz-diff button { flex: 1; }
+.pz-diff button.on { border-color: var(--accent); background: #2b3a20; }
+.puzzles .coach button { margin-top: 6px; }

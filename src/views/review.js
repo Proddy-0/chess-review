@@ -59,11 +59,20 @@ export function renderReview(root, game, me = []) {
       <aside class="panel">
         <div class="panel-head">
           <span class="ph-title">♞ Revisão da partida</span>
-          <span class="ph-tools">
-            <select id="theme" title="Tabuleiro">${Object.entries(THEMES).map(([k, v]) => `<option value="${k}" ${k === theme ? "selected" : ""}>${v}</option>`).join("")}</select>
-            <button id="mute" title="Som">${sound.muted ? "🔇" : "🔊"}</button>
-            <button data-a="flip" title="Virar tabuleiro (F)">⇅</button>
-          </span>
+          <div class="menu">
+            <button id="menuBtn" class="kebab" title="Opções" aria-haspopup="true" aria-expanded="false">⋯</button>
+            <div class="menu-pop" id="menuPop" hidden>
+              <label>Tabuleiro
+                <select id="theme">${Object.entries(THEMES).map(([k, v]) => `<option value="${k}" ${k === theme ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+              <label>Profundidade
+                <select id="depth">${DEPTHS.map((d) => `<option value="${d}" ${d === depth ? "selected" : ""}>${d}</option>`).join("")}</select></label>
+              <button id="mute">${sound.muted ? "🔇 Som desligado" : "🔊 Som ligado"}</button>
+              <button data-a="flip">⇅ Virar tabuleiro <kbd>F</kbd></button>
+              <button id="reanalyse">↻ Reanalisar</button>
+              ${game.url ? `<a href="${esc(game.url)}" target="_blank" rel="noopener">↗ Partida original</a>` : ""}
+              <div class="menu-status" id="engineInfo"></div>
+            </div>
+          </div>
         </div>
         <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="ptxt"></span></div>
         <div class="stage" id="stage"></div>
@@ -79,12 +88,6 @@ export function renderReview(root, game, me = []) {
           <button data-a="next" title="Avançar (→)">▶</button>
           <button data-a="last" title="Fim (End)">⏭</button>
           <select id="speed" title="Velocidade"><option value="1800">lento</option><option value="1100" selected>normal</option><option value="550">rápido</option></select>
-        </div>
-        <div class="settings">
-          Profundidade
-          <select id="depth">${DEPTHS.map((d) => `<option value="${d}" ${d === depth ? "selected" : ""}>${d}</option>`).join("")}</select>
-          <button id="reanalyse">Reanalisar</button>
-          ${game.url ? `<a href="${esc(game.url)}" target="_blank" rel="noopener">partida original ↗</a>` : ""}
         </div>
       </aside>
     </div>`;
@@ -236,7 +239,15 @@ export function renderReview(root, game, me = []) {
         <table class="kinds">
           ${KIND_ORDER.map((k) => `<tr class="${count("w", k) + count("b", k) ? "" : "zero"}"><td class="kc">${count("w", k)}</td><td class="kn">${badge(k)}<span style="color:${KINDS[k].color}">${KINDS[k].name}</span></td><td class="kc">${count("b", k)}</td></tr>`).join("")}
         </table>
-        ${key.length ? `<div class="keym"><small>Momentos-chave</small><div>${key.map((i) => `<button class="chip" data-p="${i + 1}">${badge(cls[i].kind, "sm")}${Math.ceil((i + 1) / 2)}${moves[i].color === "w" ? "." : "..."} ${esc(moves[i].san)}</button>`).join("")}</div></div>` : ""}
+        ${key.length ? `<div class="keym"><small>Momentos-chave</small><div class="kcards">${key.map((i) => `
+          <button class="kcard" data-p="${i + 1}" style="--c:${KINDS[cls[i].kind].color}">
+            ${badge(cls[i].kind)}
+            <span class="kc-body">
+              <b>${Math.ceil((i + 1) / 2)}${moves[i].color === "w" ? "." : "..."} ${esc(moves[i].san)}</b>
+              <small>${KINDS[cls[i].kind].name}</small>
+            </span>
+            <span class="kc-ev">${formatEval(res[i].ev)} → ${formatEval(res[i + 1].ev)}</span>
+          </button>`).join("")}</div></div>` : ""}
         <button class="start" id="start">▶ Começar revisão</button>
       </div>`;
     root.querySelectorAll("[data-count]").forEach((el) => countUp(el, +el.dataset.count));
@@ -256,6 +267,7 @@ export function renderReview(root, game, me = []) {
   function coach() {
     const mv = moves[cur - 1];
     const stage = $("stage");
+    root.querySelector(".panel").classList.toggle("summary-mode", !mv && done);
     if (!mv) {
       if (done) return summary();
       stage.innerHTML = `<div class="coach card-in"><div class="coach-ico">♞</div><div><div class="ctitle">Analisando a partida…</div><p>O Stockfish está avaliando cada lance. Você já pode navegar pela partida enquanto isso.</p></div></div>`;
@@ -370,7 +382,8 @@ export function renderReview(root, game, me = []) {
   function setProgress(i) {
     const pct = Math.round((i / (n + 1)) * 100);
     $("pfill").style.width = `${pct}%`;
-    $("ptxt").textContent = done ? `Stockfish 19 · profundidade ${depth}` : `Analisando ${i}/${n + 1} posições · ${pct}%`;
+    $("ptxt").textContent = `Analisando ${i}/${n + 1} posições · ${pct}%`;
+    $("engineInfo").textContent = done ? `Stockfish 19 · profundidade ${depth}` : `Analisando… ${pct}%`;
     $("progress").classList.toggle("done", done);
   }
 
@@ -448,7 +461,14 @@ export function renderReview(root, game, me = []) {
   });
   $("speed").addEventListener("change", () => { if (timer) { stop(); play(); } });
   $("theme").addEventListener("change", (e) => { theme = e.target.value; store.set("theme", theme); $("wrap").dataset.theme = theme; });
-  $("mute").addEventListener("click", (e) => { e.currentTarget.textContent = sound.toggle() ? "🔇" : "🔊"; });
+  $("mute").addEventListener("click", (e) => { e.currentTarget.textContent = sound.toggle() ? "🔇 Som desligado" : "🔊 Som ligado"; });
+
+  // "⋯" options menu
+  const menuBtn = $("menuBtn"), menuPop = $("menuPop");
+  const setMenu = (open) => { menuPop.hidden = !open; menuBtn.setAttribute("aria-expanded", String(open)); };
+  menuBtn.addEventListener("click", (e) => { e.stopPropagation(); setMenu(menuPop.hidden); });
+  const onDocClick = (e) => { if (!e.target.closest(".menu")) setMenu(false); };
+  document.addEventListener("click", onDocClick);
 
   const gIndex = (e) => {
     const r = $("graph").getBoundingClientRect();
@@ -470,6 +490,7 @@ export function renderReview(root, game, me = []) {
   const onKey = (e) => {
     if (e.target.closest("input, textarea, select")) return;
     const k = { ArrowLeft: "prev", ArrowRight: "next", Home: "first", End: "last", " ": "play", f: "flip", F: "flip" }[e.key];
+    if (e.key === "Escape") return setMenu(false);
     if (k) { e.preventDefault(); act[k](); }
   };
   window.addEventListener("keydown", onKey);
@@ -478,5 +499,5 @@ export function renderReview(root, game, me = []) {
   goto(0);
   analyse();
 
-  return () => { alive = false; stop(); stopPreview(); engine?.terminate(); cg.destroy(); window.removeEventListener("keydown", onKey); };
+  return () => { alive = false; stop(); stopPreview(); engine?.terminate(); cg.destroy(); window.removeEventListener("keydown", onKey); document.removeEventListener("click", onDocClick); };
 }

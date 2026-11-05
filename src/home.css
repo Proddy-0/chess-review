@@ -25,6 +25,14 @@ button.ghost:hover { color: var(--text); background: #3a3834; }
 #edit { margin-left: auto; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
 
+.quickplay { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 14px; }
+.qp-title { font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.qp-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.qp { background: #1f1e1b; border: 1px solid #3a3834; color: var(--text); text-decoration: none; padding: 7px 12px; border-radius: 8px;
+  font-weight: 700; font-size: 13px; transition: background .12s, border-color .12s, transform .12s; }
+.qp:hover { background: #3d5a26; border-color: #81b64c; transform: translateY(-1px); }
+.quickplay small { margin-left: auto; }
 .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .tabs { display: flex; gap: 4px; background: var(--panel); padding: 4px; border-radius: 10px; }
 .tab { background: transparent; border: 0; border-radius: 7px; padding: 7px 14px; font-weight: 700; color: var(--muted); display: flex; gap: 6px; align-items: center; }

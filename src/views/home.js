@@ -9,6 +9,12 @@ const SPEED = {
 const SRC = { chesscom: "chess.com", lichess: "Lichess", offline: "Offline", pgn: "PGN" };
 const PIECE = { p: "pawn", n: "knight", b: "bishop", r: "rook", q: "queen", k: "king" };
 
+// chess.com quick play: [label, base seconds, increment, icon]
+const QUICK = [
+  ["1 min", 60, 0, "⚡"], ["3 min", 180, 0, "🔥"], ["3+2", 180, 2, "🔥"], ["5 min", 300, 0, "🔥"],
+  ["10 min", 600, 0, "⏱"], ["15+10", 900, 10, "⏱"], ["30 min", 1800, 0, "⏱"],
+];
+
 let cache = { users: null, games: [] }; // survives navigation inside the SPA
 
 function miniBoard(fen, flip) {
@@ -59,6 +65,16 @@ export function renderHome(root, query = "") {
             <button class="primary">Salvar e buscar</button>
           </div>
         </form>
+      </div>
+
+      <div class="quickplay">
+        <span class="qp-title"><span class="src chesscom">chess.com</span> Jogar agora</span>
+        <div class="qp-chips">
+          ${QUICK.map(([label, base, inc, ico]) => `<a class="qp" target="_blank" rel="noopener"
+            href="https://www.chess.com/play/online/new?action=createLiveChallenge&base=${base}&timeIncrement=${inc}"
+            title="Abre o chess.com já procurando adversário">${ico} ${label}</a>`).join("")}
+        </div>
+        <small class="muted">Abre o chess.com já buscando adversário nesse ritmo.</small>
       </div>
 
       <div class="toolbar">

@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Chess Review",
+  "version": "0.2.0",
+  "description": "Botão pra revisar no Chess Review as partidas do chess.com que já terminaram.",
+  "content_scripts": [
+    {
+      "matches": ["https://www.chess.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

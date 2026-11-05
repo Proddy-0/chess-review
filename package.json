@@ -1,0 +1,24 @@
+{
+  "name": "chess-review",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/tcn.test.mjs && node test/promo.test.mjs",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "GPL-3.0-only",
+  "dependencies": {
+    "chess.js": "^1.4.0",
+    "chessground": "^9.2.1",
+    "stockfish": "^19.0.1"
+  },
+  "type": "module",
+  "devDependencies": {
+    "vite": "^8.3.6"
+  },
+  "private": true
+}
